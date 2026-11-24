@@ -1,0 +1,32 @@
+# cf-tempmail — copy to wrangler.toml and fill in database_id + DOMAINS
+#   cp wrangler.toml.template wrangler.toml
+# Create the database:  wrangler d1 create cf-tempmail
+# Apply the schema:     wrangler d1 execute DB --remote --file=db/schema.sql
+name = "cf-tempmail"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+workers_dev = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "cf-tempmail"
+database_id = "REPLACE_WITH_YOUR_D1_ID"
+
+[vars]
+# Comma-separated list of domains that can receive mail.
+# Each domain must be on Cloudflare with Email Routing enabled and a
+# catch-all rule routing to this Worker.
+DOMAINS = "example.com"
+# Set to "1" ONLY for local/demo testing: enables POST /api/test-inject.
+ALLOW_TEST_INJECT = "0"
+# Max number of mails kept in storage; when exceeded, the oldest are
+# deleted during cleanup (runs on every incoming mail and list query).
+MAX_MAILS = "1000"
+# Full inbox page (/inbox) switch: "1" = open, anything else = closed
+# (the page returns 404 and the OTP page hides its inbox link).
+# Default closed to prevent free-riding.
+INBOX_ENABLED = "0"
+
+[triggers]
+# Expired mailbox + mail cleanup
+crons = ["*/10 * * * *"]

@@ -1,0 +1,22 @@
+{
+  "dependencies": {
+    "postal-mime": "^2.4.0"
+  },
+  "description": "Public temporary email (tempmail.plus style) on Cloudflare Workers + Email Routing + D1",
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.0.0",
+    "typescript": "^5.7.0",
+    "wrangler": "^4.0.0"
+  },
+  "name": "cf-tempmail",
+  "scripts": {
+    "db:local": "wrangler d1 execute DB --local --file=db/schema.sql",
+    "db:remote": "wrangler d1 execute DB --remote --file=db/schema.sql",
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "typecheck": "tsc --noEmit"
+  },
+  "type": "module",
+  "version": "0.1.0",
+  "license": "MIT"
+}
