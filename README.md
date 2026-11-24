@@ -67,6 +67,20 @@ npx wrangler deploy
 
 > 注意：启用 Email Routing 会接管该域名的全部收信。若域名已有在用的邮箱服务，请改用闲置域名。
 
+## 单文件版（控制台粘贴部署）
+
+仓库根目录的 `worker.js` 是打包好的单文件版本（约 140KB，依赖已内嵌），不想用命令行时可以全程在 Cloudflare 控制台操作：
+
+1. 控制台 → **Storage & Databases → D1** → 建一个库，进库的 Console 执行 `db/schema.sql` 的内容建表
+2. **Workers & Pages → Create → Worker**，建好后点 **Edit code**，把 `worker.js` 全文粘贴进去，Deploy
+3. 该 Worker → **Settings → Variables and Secrets**，添加：
+   - D1 绑定：变量名 `DB`，选第 1 步的库
+   - 变量 `DOMAINS` = 你的域名（必填）
+   - （可选）变量 `MAX_MAILS`、`INBOX_ENABLED`；机密 `API_KEY`
+4. 为域名开启 Email Routing 并把 Catch-all 指向这个 Worker（同上第 4、5 步）
+
+注意：`worker.js` 是构建产物，改功能请改 `src/` 源码后重新打包，不要直接改它。
+
 ## 环境变量
 
 在 `wrangler.toml` 的 `[vars]` 中配置（也可在控制台 Worker → Settings → Variables 修改，立即生效）：
