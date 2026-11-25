@@ -47,7 +47,7 @@ export const OTP_HTML = `<!DOCTYPE html>
     <div class="code" id="codeBox" title="点击复制">------</div>
     <div class="status" id="status">请在上方输入邮箱地址查看验证码</div>
     <div class="err" id="err"></div>
-    <div class="foot"><a href="/inbox">打开完整收件箱 →</a></div>
+    <div class="foot"><a href="/inbox">打开完整收件箱 →</a> · <a href="#" id="keyLink">访问密钥设置</a></div>
   </div>
 </main>
 <script>
@@ -82,12 +82,22 @@ function extractCode(subject, text){
   return extractFromText(subject || '') || extractFromText(text || '');
 }
 
-var ERR_CN = { domain_not_allowed:'该域名不在本站收信范围内', invalid_email:'邮箱地址格式不对', epin_required:'该邮箱需要填写 PIN', epin_invalid:'PIN 不正确', not_found:'没有找到这封邮件', mailbox_write_disabled:'该操作已禁用' };
-async function api(path){
-  var r = await fetch(path);
+var ERR_CN = { domain_not_allowed:'该域名不在本站收信范围内', invalid_email:'邮箱地址格式不对', epin_required:'该邮箱需要填写 PIN', epin_invalid:'PIN 不正确', not_found:'没有找到这封邮件', mailbox_write_disabled:'该操作已禁用', unauthorized:'访问密钥不正确', api_key_not_configured:'服务器尚未配置访问密钥' };
+function getKey(){ return localStorage.getItem('cft_api_key') || ''; }
+var keyAsked = false;
+async function api(path, retried){
+  var r = await fetch(path, { headers: { 'Authorization': 'Bearer ' + getKey() } });
   var data = null;
   try { data = await r.json(); } catch(e) {}
-  if (!r.ok) { var e = new Error((data && ERR_CN[data.error]) || (data && data.error) || ('请求失败（状态码 ' + r.status + '）')); e.code = (data && data.error) || ''; throw e; }
+  if (!r.ok) {
+    var code = (data && data.error) || '';
+    if (code === 'unauthorized' && !retried && !keyAsked) {
+      keyAsked = true;
+      var k = prompt(getKey() ? '访问密钥不正确，请重新输入：' : '本站接口需要访问密钥，请输入：', '');
+      if (k && k.trim()) { localStorage.setItem('cft_api_key', k.trim()); return api(path, true); }
+    }
+    var e = new Error((data && ERR_CN[code]) || code || ('请求失败（状态码 ' + r.status + '）')); e.code = code; throw e;
+  }
   return data;
 }
 function qs(){ return '?email=' + encodeURIComponent(state.email) + '&epin=' + encodeURIComponent(state.epin); }
@@ -131,6 +141,7 @@ async function poll(){
     }
     setStatus('正在监听 ' + state.email + ' …最新邮件里暂未找到 6 位验证码');
   } catch(e) {
+    if (e.code === 'unauthorized' || e.code === 'api_key_not_configured') { stop(); setErr('获取失败：' + e.message + '（点下方「访问密钥设置」可重新输入）'); return; }
     if (e.code === 'epin_required' || e.code === 'epin_invalid') {
       var pin = prompt('这个邮箱设有 PIN，请输入：', state.epin || '');
       if (pin !== null) { state.epin = pin; return poll(); }
@@ -164,6 +175,15 @@ $('btnGo').onclick = function(){
   start(email);
 };
 $('inEmail').addEventListener('keydown', function(ev){ if (ev.key === 'Enter') $('btnGo').click(); });
+$('keyLink').onclick = function(ev){
+  ev.preventDefault();
+  var k = prompt('输入访问密钥（清空并确定 = 删除已保存的密钥）：', getKey());
+  if (k === null) return;
+  keyAsked = false;
+  if (k.trim()) localStorage.setItem('cft_api_key', k.trim()); else localStorage.removeItem('cft_api_key');
+  setErr('');
+  setStatus('访问密钥已更新');
+};
 $('codeBox').onclick = function(){
   if (!state.code) return;
   navigator.clipboard.writeText(state.code).then(function(){

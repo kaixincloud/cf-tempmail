@@ -2,7 +2,7 @@
 // 部署（控制台粘贴）：新建 Worker 后粘贴本文件，再在 设置 → 变量和机密 中绑定：
 //   D1 数据库绑定：变量名 DB（需先建库并执行 db/schema.sql）
 //   变量：DOMAINS=你的域名（必填，逗号分隔） 可选 MAX_MAILS / INBOX_ENABLED
-//   机密：API_KEY（可选，/api/latest 鉴权用）
+//   机密：API_KEY（必填，所有 /api 接口与网页查件都靠它鉴权）
 // 最后为域名开启 Email Routing 并把 Catch-all 指向这个 Worker。详见 README「单文件版」一节。
 var __defProp = Object.defineProperty;
 var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
@@ -3984,7 +3984,7 @@ var FRONTEND_HTML = `<!DOCTYPE html>
     <iframe class="mailhtml hidden" id="dHtml" sandbox=""></iframe>
   </div>
 
-  <footer><a href="/" style="color:#2f6fed;text-decoration:none">\u2190 \u53BB\u53D6\u9A8C\u8BC1\u7801</a></footer>
+  <footer><a href="/" style="color:#2f6fed;text-decoration:none">\u2190 \u53BB\u53D6\u9A8C\u8BC1\u7801</a> \xB7 <a href="#" id="keyLink" style="color:#2f6fed;text-decoration:none">\u8BBF\u95EE\u5BC6\u94A5\u8BBE\u7F6E</a></footer>
 </main>
 <script>
 var state = { email: '', epin: '', currentMail: null, timer: null };
@@ -3999,12 +3999,27 @@ function parseEmail(raw){
   return m ? m[0].toLowerCase() : '';
 }
 
-var ERR_CN = { domain_not_allowed:'\u8BE5\u57DF\u540D\u4E0D\u5728\u672C\u7AD9\u6536\u4FE1\u8303\u56F4\u5185', invalid_email:'\u90AE\u7BB1\u5730\u5740\u683C\u5F0F\u4E0D\u5BF9', epin_required:'\u8BE5\u90AE\u7BB1\u9700\u8981\u586B\u5199 PIN', epin_invalid:'PIN \u4E0D\u6B63\u786E', not_found:'\u6CA1\u6709\u627E\u5230\u8FD9\u5C01\u90AE\u4EF6', mailbox_write_disabled:'\u8BE5\u64CD\u4F5C\u5DF2\u7981\u7528' };
-async function api(path, opts){
+var ERR_CN = { domain_not_allowed:'\u8BE5\u57DF\u540D\u4E0D\u5728\u672C\u7AD9\u6536\u4FE1\u8303\u56F4\u5185', invalid_email:'\u90AE\u7BB1\u5730\u5740\u683C\u5F0F\u4E0D\u5BF9', epin_required:'\u8BE5\u90AE\u7BB1\u9700\u8981\u586B\u5199 PIN', epin_invalid:'PIN \u4E0D\u6B63\u786E', not_found:'\u6CA1\u6709\u627E\u5230\u8FD9\u5C01\u90AE\u4EF6', mailbox_write_disabled:'\u8BE5\u64CD\u4F5C\u5DF2\u7981\u7528', unauthorized:'\u8BBF\u95EE\u5BC6\u94A5\u4E0D\u6B63\u786E\uFF08\u70B9\u5E95\u90E8\u300C\u8BBF\u95EE\u5BC6\u94A5\u8BBE\u7F6E\u300D\u53EF\u91CD\u65B0\u8F93\u5165\uFF09', api_key_not_configured:'\u670D\u52A1\u5668\u5C1A\u672A\u914D\u7F6E\u8BBF\u95EE\u5BC6\u94A5' };
+function getKey(){ return localStorage.getItem('cft_api_key') || ''; }
+var keyAsked = false;
+async function api(path, opts, retried){
+  opts = opts || {};
+  var headers = {};
+  if (opts.headers) { for (var hk in opts.headers) headers[hk] = opts.headers[hk]; }
+  headers['Authorization'] = 'Bearer ' + getKey();
+  opts.headers = headers;
   var r = await fetch(path, opts);
   var data = null;
   try { data = await r.json(); } catch(e) {}
-  if (!r.ok) throw new Error((data && ERR_CN[data.error]) || (data && data.error) || ('\u8BF7\u6C42\u5931\u8D25\uFF08\u72B6\u6001\u7801 ' + r.status + '\uFF09'));
+  if (!r.ok) {
+    var code = (data && data.error) || '';
+    if (code === 'unauthorized' && !retried && !keyAsked) {
+      keyAsked = true;
+      var k = prompt(getKey() ? '\u8BBF\u95EE\u5BC6\u94A5\u4E0D\u6B63\u786E\uFF0C\u8BF7\u91CD\u65B0\u8F93\u5165\uFF1A' : '\u672C\u7AD9\u63A5\u53E3\u9700\u8981\u8BBF\u95EE\u5BC6\u94A5\uFF0C\u8BF7\u8F93\u5165\uFF1A', '');
+      if (k && k.trim()) { localStorage.setItem('cft_api_key', k.trim()); return api(path, opts, true); }
+    }
+    throw new Error((data && ERR_CN[code]) || code || ('\u8BF7\u6C42\u5931\u8D25\uFF08\u72B6\u6001\u7801 ' + r.status + '\uFF09'));
+  }
   return data;
 }
 
@@ -4075,6 +4090,14 @@ function startQuery(){
   refresh().then(function(){ $('meta').textContent = '\u67E5\u8BE2\u5730\u5740\uFF1A' + email; });
 }
 
+$('keyLink').onclick = function(ev){
+  ev.preventDefault();
+  var k = prompt('\u8F93\u5165\u8BBF\u95EE\u5BC6\u94A5\uFF08\u6E05\u7A7A\u5E76\u786E\u5B9A = \u5220\u9664\u5DF2\u4FDD\u5B58\u7684\u5BC6\u94A5\uFF09\uFF1A', getKey());
+  if (k === null) return;
+  keyAsked = false;
+  if (k.trim()) localStorage.setItem('cft_api_key', k.trim()); else localStorage.removeItem('cft_api_key');
+  err('\u8BBF\u95EE\u5BC6\u94A5\u5DF2\u66F4\u65B0');
+};
 $('btnQuery').onclick = startQuery;
 $('inEmail').addEventListener('keydown', function(ev){ if (ev.key === 'Enter') startQuery(); });
 $('btnCloseDetail').onclick = function(){ $('detailCard').classList.add('hidden'); };
@@ -4142,7 +4165,7 @@ var OTP_HTML = `<!DOCTYPE html>
     <div class="code" id="codeBox" title="\u70B9\u51FB\u590D\u5236">------</div>
     <div class="status" id="status">\u8BF7\u5728\u4E0A\u65B9\u8F93\u5165\u90AE\u7BB1\u5730\u5740\u67E5\u770B\u9A8C\u8BC1\u7801</div>
     <div class="err" id="err"></div>
-    <div class="foot"><a href="/inbox">\u6253\u5F00\u5B8C\u6574\u6536\u4EF6\u7BB1 \u2192</a></div>
+    <div class="foot"><a href="/inbox">\u6253\u5F00\u5B8C\u6574\u6536\u4EF6\u7BB1 \u2192</a> \xB7 <a href="#" id="keyLink">\u8BBF\u95EE\u5BC6\u94A5\u8BBE\u7F6E</a></div>
   </div>
 </main>
 <script>
@@ -4177,12 +4200,22 @@ function extractCode(subject, text){
   return extractFromText(subject || '') || extractFromText(text || '');
 }
 
-var ERR_CN = { domain_not_allowed:'\u8BE5\u57DF\u540D\u4E0D\u5728\u672C\u7AD9\u6536\u4FE1\u8303\u56F4\u5185', invalid_email:'\u90AE\u7BB1\u5730\u5740\u683C\u5F0F\u4E0D\u5BF9', epin_required:'\u8BE5\u90AE\u7BB1\u9700\u8981\u586B\u5199 PIN', epin_invalid:'PIN \u4E0D\u6B63\u786E', not_found:'\u6CA1\u6709\u627E\u5230\u8FD9\u5C01\u90AE\u4EF6', mailbox_write_disabled:'\u8BE5\u64CD\u4F5C\u5DF2\u7981\u7528' };
-async function api(path){
-  var r = await fetch(path);
+var ERR_CN = { domain_not_allowed:'\u8BE5\u57DF\u540D\u4E0D\u5728\u672C\u7AD9\u6536\u4FE1\u8303\u56F4\u5185', invalid_email:'\u90AE\u7BB1\u5730\u5740\u683C\u5F0F\u4E0D\u5BF9', epin_required:'\u8BE5\u90AE\u7BB1\u9700\u8981\u586B\u5199 PIN', epin_invalid:'PIN \u4E0D\u6B63\u786E', not_found:'\u6CA1\u6709\u627E\u5230\u8FD9\u5C01\u90AE\u4EF6', mailbox_write_disabled:'\u8BE5\u64CD\u4F5C\u5DF2\u7981\u7528', unauthorized:'\u8BBF\u95EE\u5BC6\u94A5\u4E0D\u6B63\u786E', api_key_not_configured:'\u670D\u52A1\u5668\u5C1A\u672A\u914D\u7F6E\u8BBF\u95EE\u5BC6\u94A5' };
+function getKey(){ return localStorage.getItem('cft_api_key') || ''; }
+var keyAsked = false;
+async function api(path, retried){
+  var r = await fetch(path, { headers: { 'Authorization': 'Bearer ' + getKey() } });
   var data = null;
   try { data = await r.json(); } catch(e) {}
-  if (!r.ok) { var e = new Error((data && ERR_CN[data.error]) || (data && data.error) || ('\u8BF7\u6C42\u5931\u8D25\uFF08\u72B6\u6001\u7801 ' + r.status + '\uFF09')); e.code = (data && data.error) || ''; throw e; }
+  if (!r.ok) {
+    var code = (data && data.error) || '';
+    if (code === 'unauthorized' && !retried && !keyAsked) {
+      keyAsked = true;
+      var k = prompt(getKey() ? '\u8BBF\u95EE\u5BC6\u94A5\u4E0D\u6B63\u786E\uFF0C\u8BF7\u91CD\u65B0\u8F93\u5165\uFF1A' : '\u672C\u7AD9\u63A5\u53E3\u9700\u8981\u8BBF\u95EE\u5BC6\u94A5\uFF0C\u8BF7\u8F93\u5165\uFF1A', '');
+      if (k && k.trim()) { localStorage.setItem('cft_api_key', k.trim()); return api(path, true); }
+    }
+    var e = new Error((data && ERR_CN[code]) || code || ('\u8BF7\u6C42\u5931\u8D25\uFF08\u72B6\u6001\u7801 ' + r.status + '\uFF09')); e.code = code; throw e;
+  }
   return data;
 }
 function qs(){ return '?email=' + encodeURIComponent(state.email) + '&epin=' + encodeURIComponent(state.epin); }
@@ -4226,6 +4259,7 @@ async function poll(){
     }
     setStatus('\u6B63\u5728\u76D1\u542C ' + state.email + ' \u2026\u6700\u65B0\u90AE\u4EF6\u91CC\u6682\u672A\u627E\u5230 6 \u4F4D\u9A8C\u8BC1\u7801');
   } catch(e) {
+    if (e.code === 'unauthorized' || e.code === 'api_key_not_configured') { stop(); setErr('\u83B7\u53D6\u5931\u8D25\uFF1A' + e.message + '\uFF08\u70B9\u4E0B\u65B9\u300C\u8BBF\u95EE\u5BC6\u94A5\u8BBE\u7F6E\u300D\u53EF\u91CD\u65B0\u8F93\u5165\uFF09'); return; }
     if (e.code === 'epin_required' || e.code === 'epin_invalid') {
       var pin = prompt('\u8FD9\u4E2A\u90AE\u7BB1\u8BBE\u6709 PIN\uFF0C\u8BF7\u8F93\u5165\uFF1A', state.epin || '');
       if (pin !== null) { state.epin = pin; return poll(); }
@@ -4259,6 +4293,15 @@ $('btnGo').onclick = function(){
   start(email);
 };
 $('inEmail').addEventListener('keydown', function(ev){ if (ev.key === 'Enter') $('btnGo').click(); });
+$('keyLink').onclick = function(ev){
+  ev.preventDefault();
+  var k = prompt('\u8F93\u5165\u8BBF\u95EE\u5BC6\u94A5\uFF08\u6E05\u7A7A\u5E76\u786E\u5B9A = \u5220\u9664\u5DF2\u4FDD\u5B58\u7684\u5BC6\u94A5\uFF09\uFF1A', getKey());
+  if (k === null) return;
+  keyAsked = false;
+  if (k.trim()) localStorage.setItem('cft_api_key', k.trim()); else localStorage.removeItem('cft_api_key');
+  setErr('');
+  setStatus('\u8BBF\u95EE\u5BC6\u94A5\u5DF2\u66F4\u65B0');
+};
 $('codeBox').onclick = function(){
   if (!state.code) return;
   navigator.clipboard.writeText(state.code).then(function(){
@@ -4502,6 +4545,8 @@ var index_default = {
     if (path === "/api/mailboxes" && (req.method === "POST" || req.method === "DELETE"))
       return json({ error: "mailbox_write_disabled" }, 403);
     if (path === "/api/mails" && req.method === "GET") {
+      const denied = await requireApiKey(req, env);
+      if (denied) return denied;
       ctx.waitUntil(cleanup(env).catch(() => {
       }));
       return listMails(url, env);
@@ -4511,10 +4556,22 @@ var index_default = {
       if (denied) return denied;
       return latestMail(url, env);
     }
-    if (path === "/api/test-inject" && req.method === "POST") return testInject(req, env);
+    if (path === "/api/test-inject" && req.method === "POST") {
+      const denied = await requireApiKey(req, env);
+      if (denied) return denied;
+      return testInject(req, env);
+    }
     const mailMatch = path.match(/^\/api\/mails\/(\d+)$/);
-    if (mailMatch && req.method === "GET") return getMail(mailMatch[1], url, env);
-    if (mailMatch && req.method === "DELETE") return deleteMail(mailMatch[1], url, env);
+    if (mailMatch && req.method === "GET") {
+      const denied = await requireApiKey(req, env);
+      if (denied) return denied;
+      return getMail(mailMatch[1], url, env);
+    }
+    if (mailMatch && req.method === "DELETE") {
+      const denied = await requireApiKey(req, env);
+      if (denied) return denied;
+      return deleteMail(mailMatch[1], url, env);
+    }
     return json({ error: "not_found" }, 404);
   },
   async email(message, env) {

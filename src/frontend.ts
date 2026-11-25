@@ -68,7 +68,7 @@ export const FRONTEND_HTML = `<!DOCTYPE html>
     <iframe class="mailhtml hidden" id="dHtml" sandbox=""></iframe>
   </div>
 
-  <footer><a href="/" style="color:#2f6fed;text-decoration:none">← 去取验证码</a></footer>
+  <footer><a href="/" style="color:#2f6fed;text-decoration:none">← 去取验证码</a> · <a href="#" id="keyLink" style="color:#2f6fed;text-decoration:none">访问密钥设置</a></footer>
 </main>
 <script>
 var state = { email: '', epin: '', currentMail: null, timer: null };
@@ -83,12 +83,27 @@ function parseEmail(raw){
   return m ? m[0].toLowerCase() : '';
 }
 
-var ERR_CN = { domain_not_allowed:'该域名不在本站收信范围内', invalid_email:'邮箱地址格式不对', epin_required:'该邮箱需要填写 PIN', epin_invalid:'PIN 不正确', not_found:'没有找到这封邮件', mailbox_write_disabled:'该操作已禁用' };
-async function api(path, opts){
+var ERR_CN = { domain_not_allowed:'该域名不在本站收信范围内', invalid_email:'邮箱地址格式不对', epin_required:'该邮箱需要填写 PIN', epin_invalid:'PIN 不正确', not_found:'没有找到这封邮件', mailbox_write_disabled:'该操作已禁用', unauthorized:'访问密钥不正确（点底部「访问密钥设置」可重新输入）', api_key_not_configured:'服务器尚未配置访问密钥' };
+function getKey(){ return localStorage.getItem('cft_api_key') || ''; }
+var keyAsked = false;
+async function api(path, opts, retried){
+  opts = opts || {};
+  var headers = {};
+  if (opts.headers) { for (var hk in opts.headers) headers[hk] = opts.headers[hk]; }
+  headers['Authorization'] = 'Bearer ' + getKey();
+  opts.headers = headers;
   var r = await fetch(path, opts);
   var data = null;
   try { data = await r.json(); } catch(e) {}
-  if (!r.ok) throw new Error((data && ERR_CN[data.error]) || (data && data.error) || ('请求失败（状态码 ' + r.status + '）'));
+  if (!r.ok) {
+    var code = (data && data.error) || '';
+    if (code === 'unauthorized' && !retried && !keyAsked) {
+      keyAsked = true;
+      var k = prompt(getKey() ? '访问密钥不正确，请重新输入：' : '本站接口需要访问密钥，请输入：', '');
+      if (k && k.trim()) { localStorage.setItem('cft_api_key', k.trim()); return api(path, opts, true); }
+    }
+    throw new Error((data && ERR_CN[code]) || code || ('请求失败（状态码 ' + r.status + '）'));
+  }
   return data;
 }
 
@@ -159,6 +174,14 @@ function startQuery(){
   refresh().then(function(){ $('meta').textContent = '查询地址：' + email; });
 }
 
+$('keyLink').onclick = function(ev){
+  ev.preventDefault();
+  var k = prompt('输入访问密钥（清空并确定 = 删除已保存的密钥）：', getKey());
+  if (k === null) return;
+  keyAsked = false;
+  if (k.trim()) localStorage.setItem('cft_api_key', k.trim()); else localStorage.removeItem('cft_api_key');
+  err('访问密钥已更新');
+};
 $('btnQuery').onclick = startQuery;
 $('inEmail').addEventListener('keydown', function(ev){ if (ev.key === 'Enter') startQuery(); });
 $('btnCloseDetail').onclick = function(){ $('detailCard').classList.add('hidden'); };

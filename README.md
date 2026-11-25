@@ -34,7 +34,7 @@
         ┌───────────────┐      ┌────────┐
         │ Worker        │─────►│ D1     │  mailboxes / mails
         │ ├ 网页 / /inbox │      └────────┘
-        │ ├ 公开查件 API  │
+        │ ├ 鉴权查件 API  │
         │ └ 鉴权 latest   │
         └───────────────┘
 ```
@@ -91,23 +91,25 @@ npx wrangler deploy
 | `MAX_MAILS` | 邮件总存储上限，超量时清理会删除最旧的邮件 | `1000` |
 | `INBOX_ENABLED` | 完整收件箱页 `/inbox` 开关：`1` 开放，其他值（含不设置）关闭（返回 404，取码页同时隐藏入口） | 关闭 |
 | `ALLOW_TEST_INJECT` | `1` 时开启本地测试注入接口 `POST /api/test-inject`，**生产环境务必保持 `0`** | `0` |
-| `API_KEY`（Secret） | `/api/latest` 的鉴权密钥，用 `wrangler secret put API_KEY` 设置；未设置时该接口一律 503（fail-closed） | 无 |
+| `API_KEY`（Secret） | **全部** `/api/*` 数据接口的鉴权密钥（网页查件也用它），用 `wrangler secret put API_KEY` 设置；未设置时这些接口一律 503（fail-closed） | 必填 |
 
 ## API
 
-### 公开查件（无鉴权，靠“知道地址”访问）
+### 查件接口（全部需要密钥鉴权）
+
+所有 `/api/*` 数据接口都必须带密钥（`Authorization: Bearer <API_KEY>` 或 `X-API-Key`），无密钥/错密钥一律 `401`，未配置密钥时一律 `503`（fail-closed）。只有 `/api/health` 公开，且只返回 `{"ok":true}`。网页（取码页/收件箱页）首次调用时会弹窗让你输入密钥，输入一次后浏览器记住，之后自动带上。
 
 ```
 GET /api/mails?email=<地址>&epin=<可选PIN>          邮件列表（仅元数据）
 GET /api/mails/:id?email=<地址>&epin=<可选PIN>      单封全文
 DELETE /api/mails/:id?email=<地址>&epin=<可选PIN>   删除单封
-GET /api/health                                     {"ok":true}
+GET /api/health                                     {"ok":true}（唯一公开接口）
 ```
 
 - 地址域名不在 `DOMAINS` 白名单内 → `403 domain_not_allowed`
 - 邮箱格式不对或缺失 → `400 invalid_email`
 
-### 鉴权接口（给程序用）
+### 最新一封接口（给程序用）
 
 ```
 GET /api/latest?email=<地址>[&since=<毫秒时间戳>]

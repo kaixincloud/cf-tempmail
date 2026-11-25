@@ -6,6 +6,8 @@
 //
 // API — read-only by known address (the pages never expose domains or
 // addresses; a mailbox appears automatically when mail arrives):
+//   ALL /api/* data endpoints require the API key (Authorization: Bearer
+//   <API_KEY> or X-API-Key). Only /api/health is public ({ ok: true } only).
 //   GET    /api/mails?email=<addr>&epin=<pin>            -> list (metadata only)
 //   GET    /api/mails/:id?email=<addr>&epin=<pin>        -> full mail
 //   DELETE /api/mails/:id?email=<addr>&epin=<pin>        -> delete one mail
@@ -396,7 +398,12 @@ export default {
     // arrives via Email Routing, and reading requires knowing the full address.
     if (path === '/api/mailboxes' && (req.method === 'POST' || req.method === 'DELETE'))
       return json({ error: 'mailbox_write_disabled' }, 403)
+    // ALL /api/* data endpoints require the API key (user rule, 25 Nov 2026):
+    // no key -> 401, wrong key -> 401, key unconfigured -> 503 (fail-closed).
+    // Only /api/health stays public, and it returns nothing but { ok: true }.
     if (path === '/api/mails' && req.method === 'GET') {
+      const denied = await requireApiKey(req, env)
+      if (denied) return denied
       // Opportunistic cleanup: the account cron quota may be full, so expiry
       // cleanup also rides on reads and on incoming mail (see email()).
       ctx.waitUntil(cleanup(env).catch(() => {}))
@@ -407,10 +414,22 @@ export default {
       if (denied) return denied
       return latestMail(url, env)
     }
-    if (path === '/api/test-inject' && req.method === 'POST') return testInject(req, env)
+    if (path === '/api/test-inject' && req.method === 'POST') {
+      const denied = await requireApiKey(req, env)
+      if (denied) return denied
+      return testInject(req, env)
+    }
     const mailMatch = path.match(/^\/api\/mails\/(\d+)$/)
-    if (mailMatch && req.method === 'GET') return getMail(mailMatch[1], url, env)
-    if (mailMatch && req.method === 'DELETE') return deleteMail(mailMatch[1], url, env)
+    if (mailMatch && req.method === 'GET') {
+      const denied = await requireApiKey(req, env)
+      if (denied) return denied
+      return getMail(mailMatch[1], url, env)
+    }
+    if (mailMatch && req.method === 'DELETE') {
+      const denied = await requireApiKey(req, env)
+      if (denied) return denied
+      return deleteMail(mailMatch[1], url, env)
+    }
 
     return json({ error: 'not_found' }, 404)
   },
